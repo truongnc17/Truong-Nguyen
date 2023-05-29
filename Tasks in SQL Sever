@@ -1,0 +1,175 @@
+/*Task1. Write a query joining the DimCustomer, and FactInternetSales tables
+to return CustomerKey, FullName with their number of order.Lấy thông tin Mã khách hàng,
+tên khách hàng và số lượng đơn hàng của khách hàng đó (Count Distinct SalesOrderNumber)*/
+
+SELECT	fs.CustomerKey 
+		
+		,Isnull(FirstName,' ' ) + ' ' + Isnull(MiddleName, ' ') + ' ' + Isnull(LastName,' ') AS FullName
+		
+		,count( distinct fs.SalesOrderNumber) AS NumberOfOrder
+FROM AdventureWorksDW2019.dbo.DimCustomer as dc
+JOIN AdventureWorksDW2019.dbo.FactInternetSales as fs
+ON fs.CustomerKey = dc.CustomerKey 
+Group by  fs.CustomerKey, Isnull(FirstName,' ' ) + ' ' + Isnull(MiddleName, ' ') + ' ' + Isnull(LastName,' ')
+Order by NumberOfOrder DESC
+
+/*Task 2. Write a query that create new Color_Group, if product color is 'Black' or 'Silver' or 'Silver/Black' leave 'Basic',
+else keep Color.Then Caculate total SalesAmount by new Color_group*/
+
+WITH CLF AS (
+SELECT Color, ProductKey,
+CASE 
+	WHEN Color in ('Black','Silver','Silver/Black') THEN 'Basic'
+	ELSE Color
+	end AS Color_Group
+FROM AdventureWorksDW2019.dbo.DimProduct)
+SELECT	CLF.Color_Group
+		,Sum(SalesAmount) AS TotalSalesAmout
+FROM AdventureWorksDW2019.dbo.FactInternetSales AS fs
+JOIN CLF
+ON CLF.ProductKey = fs.ProductKey
+Group by CLF.Color_Group
+Order by TotalSalesAmout desc
+
+
+
+/*Task3. From the FactInternetsales and Resellersales tables, retrieve saleordernumber, productkey,
+orderdate, shipdate of orders in October 2011, along with sales type ('Resell' or 'Internet')*/
+
+WITH NCT AS
+(SELECT SalesOrderNumber, ProductKey, OrderDate, ShipDate, 'Internet' AS SalesType
+FROM AdventureWorksDW2019.dbo.FactInternetSales
+UNION
+SELECT SalesOrderNumber, ProductKey, OrderDate, ShipDate, 'Reseller' AS SalesType
+FROM AdventureWorksDW2019.dbo.FactResellerSales)
+SELECT	 SalesOrderNumber
+		,ProductKey
+		,OrderDate
+		,ShipDate
+		,SalesType
+FROM NCT
+WHERE Month(ShipDate) = '10' and Year(ShipDate) = 2013
+
+
+
+/*Task4. Display ProductKey, EnglishProductName, Total OrderQuantity (caculate from OrderQuantity in Quarter 3 of 2013)
+of product sold in London for each Sales type ('Reseller' and 'Internet')*/
+WITH Aplus as(
+SELECT ProductKey, OrderQuantity,'Internet' AS SalesType,
+		CAST(year(OrderDate) AS char(4)) + '-Q' + 
+		CAST(CEILING(CAST(month(OrderDate) AS decimal(9,2)) / 3) AS char(1)) AS QuarterOfYear, City
+FROM AdventureWorksDW2019.dbo.FactInternetSales AS fs
+JOIN AdventureWorksDW2019.dbo.DimCustomer AS dc
+on fs.CustomerKey = dc.CustomerKey
+JOIN AdventureWorksDW2019.dbo.DimGeography AS dg
+on dc.GeographyKey = dg.GeographyKey
+UNION
+SELECT ProductKey, OrderQuantity, 'Internet' AS SalesType,
+		CAST(year(OrderDate) AS char(4)) + '-Q' + 
+		CAST(CEILING(CAST(month(OrderDate) AS decimal(9,2)) / 3) AS char(1)) AS QuarterOfYear, City
+FROM AdventureWorksDW2019.dbo.FactResellerSales AS rs
+JOIN AdventureWorksDW2019.dbo.DimReseller AS dr
+ON dr.ResellerKey = rs.ResellerKey
+JOIN AdventureWorksDW2019.dbo.DimGeography as ge
+on dr.GeographyKey = ge.GeographyKey)
+SELECT ap.ProductKey, SalesType , EnglishProductName,SUM(OrderQuantity) AS TotalQuantity
+from Aplus AS ap
+JOIN AdventureWorksDW2019.dbo.DimProduct as dp
+ON ap.ProductKey = dp.ProductKey
+WHERE QuarterOfYear ='2013-Q3' and City = 'LonDon'
+GROUP BY QuarterOfYear,ap.ProductKey,SalesType,EnglishProductName,City
+ORDER BY TotalQuantity desc
+/*Task 5. From database, retrieve total SalesAmount monthly of internet_sales and reseller_sales.
+Lấy ra dữ liệu tổng doanh số theo từng tháng của Internet_Sales và Reseller_Sales.
+Dữ liệu đầu ra sẽ gồm 4 cột:Month | Year | Internet_SalesAmount (Tổng Sales Amount từ bảng InternetSales) 
+Reseller_SalesAmount (Tổng Sales Amount từ bảng Reseller Sales).*/
+
+SELECT Month(fi.DueDate) AS DueMonth, Year(fi.DueDate) AS DueYear
+, sum(fi.SalesAmount) AS Internet_sales
+, sum(fr.SalesAmount) AS Reseller_sales
+FROM AdventureWorksDW2019.dbo.FactInternetSales as fi
+full join AdventureWorksDW2019.dbo.FactResellerSales As fr
+on fi.DueDate = fr.DueDate
+GROUP BY Month(fi.DueDate), Year(fi.DueDate)
+
+
+/**/
+with Internet_sales_by_month as
+(
+select year(DueDate) AS YearNumber
+		,month(DueDate) as MonthNumber
+		,sum(SalesAmount) AS SalesAmount
+FROM AdventureWorksDW2019.dbo.FactInternetSales AS InternetSales
+group by year(DueDate), Month(DueDate)
+ )
+, Reseller_sales_by_month as
+ (
+ select year(DueDate) AS YearNumber
+		,month(DueDate) as MonthNumber
+		,sum(SalesAmount) AS SalesAmount
+FROM AdventureWorksDW2019.dbo.FactResellerSales AS ResellerSales
+group by year(DueDate), Month(DueDate)
+)
+select isnull(im.YearNumber,re.YearNumber) AS YearNumber
+		,isnull(im.MonthNumber,re.MonthNumber)	AS MonthNumber
+		,im.SalesAmount 
+		,re.SalesAmount
+from Internet_sales_by_month as im
+full outer join Reseller_sales_by_month as re
+on im.YearNumber = re.YearNumber
+and im.MonthNumber = re.MonthNumber
+
+
+
+/**/
+WITH Internet_Sales_By_Month AS
+    (
+     SELECT YEAR(OrderDate)  AS Year_Number
+          , MONTH(OrderDate) AS Month_Number
+          , SUM(SalesAmount) AS InternetSales
+     FROM AdventureWorksDW2019.dbo.FactInternetSales AS InternetSales
+     GROUP BY YEAR(OrderDate), MONTH(OrderDate)
+    )
+	, Reseller_Sales_By_Month AS
+    (
+     SELECT YEAR(OrderDate)  AS Year_Number
+          , MONTH(OrderDate) AS Month_Number
+          , SUM(SalesAmount) AS ResellerSales
+     FROM AdventureWorksDW2019.dbo.FactResellerSales AS ResellerSales
+     GROUP BY YEAR(OrderDate), MONTH(OrderDate)
+    )
+
+SELECT ISNULL(ins.Year_Number, re.Year_Number) AS YearNumber
+     , ISNULL(ins.Month_Number, re.Month_Number) AS MonthNumber
+     , ins.InternetSales
+     , re.ResellerSales
+FROM Internet_Sales_By_Month AS ins
+FULL OUTER JOIN Reseller_Sales_By_Month AS re
+ON ins.Month_Number = re.Month_Number
+AND ins.Year_Number = re.Year_Number
+
+--Task 6. From FactInternetSales, DimCustomer, DimGeography. 
+--Get list of 5 City with highest InternetSalesAmount in each country, each year.
+--Lấy danh sách 5 thành phố có Doanh số cao nhất theo mỗi quốc gia từng năm. (Tính theo địa chỉ của khách hàng).
+--Dữ liệu lấy ra có dạng:
+--Year | Country | City | InternetSalesAmount | SalesAmountRankCountry
+
+with ABC as
+(SELECT   Year(OrderDate) AS Year
+		, dg.EnglishCountryRegionName AS Country 
+		, City
+	    ,sum(SalesAmount) AS InternetSalesAmount
+		,Row_number() over (Partition by Year(OrderDate),dg.EnglishCountryRegionName order by sum(SalesAmount) DESC) AS SalesAmountRankCountry
+FROM AdventureWorksDW2019.dbo.FactInternetSales AS fi
+JOIN AdventureWorksDW2019.dbo.DimCustomer AS dc
+ON fi.CustomerKey = dc.CustomerKey
+JOIN AdventureWorksDW2019.dbo.DimGeography AS dg
+ON dc.GeographyKey = dg.GeographyKey
+GROUP BY dg.EnglishCountryRegionName, Year(OrderDate), City)
+SELECT  Year, 
+		Country, 
+		City, 
+		InternetSalesAmount,
+		SalesAmountRankCountry
+From ABC
+where SalesAmountRankCountry <=5
